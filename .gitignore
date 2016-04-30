@@ -1,3 +1,9 @@
+# C compiled objects
+*.o
+*.hex
+*.elf
+
+
 # Windows image file caches
 Thumbs.db
 ehthumbs.db
