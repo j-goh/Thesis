@@ -11,11 +11,14 @@
 #include <util/delay.h>
 #include <stdint.h>
 
+
+volatile uint8_t ref = 0;
+
 void ADCInit (void)
 {
 	// Setup ADMUX register
-	ADMUX = (0 << REFS1) | (0 << REFS0); // Set reference voltage to Vcc
-	ADMUX |= (1 << ADLAR); // Right adjust bits
+	ADMUX = (0 << REFS2) | (1 << REFS1) | (0 << REFS0); // Set reference voltage to internal 1.1V
+	ADMUX |= (1 << ADLAR); // Left adjust bits (8 bit mode)
 	// Select PB4 (ADC2) with single ended input
 	ADMUX |= (0 << MUX3) | (0 << MUX2) | (1 << MUX1) | (0 << MUX0); 
 	
@@ -41,11 +44,14 @@ void BlinkLED (void)
 
 int main (void)
 {
+    // Set clock prescaler to 8 (1MHz clock speed)
+    //CLKPR = (1 << CLKPCE) | (0 << CLKPS3) | (0 << CLKPS2) | (0 << CLKPS1) | (0 << CLKPS0);
+    //CLKPR = (0 << CLKPCE) | (0 << CLKPS3) | (0 << CLKPS2) | (1 << CLKPS1) | (1 << CLKPS0);    
     
     // Set B3 to output
 	DDRB = (1 << DDB3) | (1 << DDB0);
     ADCInit();
-    sei();
+    sei(); // Enable interrupts
     ADCSRA |= (1 << ADSC); 
 	while(1) {
         BlinkLED();
@@ -56,12 +62,19 @@ int main (void)
 
 ISR(ADC_vect)
 {
-    if(ADCH > 128) {
+    uint8_t detected;
+    detected = ADCH;
+    // Set B0 high if ADC is more than reference level
+    if(detected > ref) {
+        ref = detected;
         PORTB |= (1 << PORTB0);
+        _delay_ms(200);
+
     } else {
+        //ref--;
         PORTB &= ~(1 << PORTB0);
     }
     
-    ADCSRA |= (1 << ADSC);
+    ADCSRA |= (1 << ADSC); // Restart the conversion
 }
     
