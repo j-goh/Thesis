@@ -19,14 +19,15 @@
 #define sbi(sfr,bit) (sfr |= _BV(bit))
 #define cbi(sfr,bit) (sfr &= ~(_BV(bit)))
 
-#define BUBBLE_THRESH   15
-#define MAX_AIR         25
+#define BUBBLE_THRESH   400
+#define MAX_AIR         5
 
 
 // OCR values for the 7 notes within an octave
 // Calculated by ocr = timer_freq / note_freq
 // Assuming a timer of 62.5kHz (to fit in 8 bits)
-const uint8_t notes[7] = {239, 213, 190, 179, 159, 142, 127};
+//const uint8_t notes[7] = {239, 213, 190, 179, 159, 142, 127};
+const uint8_t notes[2] = {239, 20};
 
 /**
  * @brief Sets the timer compare and OCR registers for timer 1 to play a tone
@@ -51,7 +52,7 @@ void PlayTone(uint8_t ocr, uint8_t duration)
 void PlayScale(void)
 {
     uint8_t i = 0;
-    for(i = 0; i < 7; i++) {
+    for(i = 0; i < 2; i++) {
         PlayTone(notes[i], 1);
     }
 }
@@ -66,8 +67,8 @@ void ADCInit (void)
     cbi(ADCSRA, ADEN);
 	/* Setup ADMUX register */
 	ADMUX = (0 << REFS2) | (1 << REFS1) | (0 << REFS0); /* Set reference voltage to 1V1 */
-	/* Select PB3 (ADC3) with single ended input */
-	ADMUX |= (0 << MUX3) | (0 << MUX2) | (1 << MUX1) | (1 << MUX0); 
+	/* Select PB2 (ADC1) with single ended input */
+	ADMUX |= (0 << MUX3) | (0 << MUX2) | (0 << MUX1) | (1 << MUX0); 
 	
 	ADCSRA |= (0 << ADATE); /* Auto trigger disabled */
 	/*
@@ -121,8 +122,8 @@ int main (void)
 	CLKPR = (1 << CLKPCE) | (0 << CLKPS3) | (0 << CLKPS2) | (0 << CLKPS1) | (0 << CLKPS0);
 	CLKPR = (0 << CLKPCE) | (0 << CLKPS3) | (1 << CLKPS2) | (1 << CLKPS1) | (0 << CLKPS0);    
 	
-	/* Set B4 and B0 to output */
-	DDRB = (1 << DDB4) | (1 << DDB0);
+	/* Set B4, B1 and B0 to output */
+	DDRB = (1 << DDB4) | (1 << DDB1) | (1 << DDB0);
 	ADCInit();
 	sei(); /* Enable interrupts */
 	
@@ -144,8 +145,12 @@ int main (void)
             /* Increment stored value */
             if (++stored > MAX_AIR) {
                 /* Maximum amount of air has entered line */
-                
+                sbi(PORTB, PORTB0);
+                while(1) {
+                    PlayScale();
+                }
                 PlayScale();
+                stored = 0; /* Reset stored air amount DEBUG */
             }
         }    
 	}
