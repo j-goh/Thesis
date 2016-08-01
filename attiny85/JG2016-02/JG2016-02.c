@@ -49,7 +49,7 @@ void PlayTone(uint8_t ocr, uint8_t duration)
  * @param None
  * @return None
  */
-void PlayScale(void)
+void PlayAlarm(void)
 {
     uint8_t i = 0;
     for(i = 0; i < 2; i++) {
@@ -129,8 +129,9 @@ int main (void)
 	
 	while(1) {
         /* Keep alive LED on B0 */
-        BlinkLED();
+        //BlinkLED();
 
+        /* TODO: turn on and off ADC, and have appropriate delay between */
         /* ADC retreival */
 		sbi(PORTB, PORTB4);
         _delay_ms(100);
@@ -143,16 +144,18 @@ int main (void)
         /* Check if a bubble was detected */
         if((on_value - off_value) < BUBBLE_THRESH) {
             /* Increment stored value */
+            sbi(PORTB, PORTB0);
             if (++stored > MAX_AIR) {
                 /* Maximum amount of air has entered line */
-                sbi(PORTB, PORTB0);
-                while(1) {
-                    PlayScale();
-                }
-                PlayScale();
+                //while(1) {
+                    //PlayAlarm();
+                //}
+                PlayAlarm();
                 stored = 0; /* Reset stored air amount DEBUG */
             }
-        }    
+        } else {
+            cbi(PORTB, PORTB0);
+        }
 	}
 	
 	return 0;
