@@ -19,7 +19,7 @@
 #define sbi(sfr,bit) (sfr |= _BV(bit))
 #define cbi(sfr,bit) (sfr &= ~(_BV(bit)))
 
-#define BUBBLE_THRESH   400
+#define BUBBLE_THRESH   8
 #define MAX_AIR         5
 #define FILT_LENGTH     8
 
@@ -133,23 +133,35 @@ void BlinkLED (void)
 }
 
 /**
-  * @brief   once for ~200ms. Toggles the B0 GPIO Pin.
+  * @brief Calculates the output of a moving average filter.
   * @param old_sample - oldest sample from the filter, new_sample - newest
   * sample from the filter, total - sum of FILT_LENGTH samples
-  * @return Nothing
+  * @return output from filter (uint16_t)
   */
-uint16_t AvgFilt(uint16_t old_sample, uint16_t new_sample, uint16_t total)
+uint16_t AvgFilt(uint16_t *samples, uint16_t new_sample)
 {
-    total -= old_sample;
-    total += new_sample;
+    uint16_t total = 0;
+    uint8_t i;
+    
+    for(i = 0; i < FILT_LENGTH; i++) {
+        /* If we reach the end of the samples, replace with new_sample */
+        if(i == 7) { 
+            samples[i] = new_sample;
+        }
+        /* Update each sample with the next newest */
+        samples[i] = samples[i+1];
+        /* Add the newly written samples */
+        total += samples[i];
+    }
+    
     return (total / FILT_LENGTH);
 }
 
 int main (void)
 {
-    uint16_t air_value, water_value;
-    uint16_t on_value, off_value;
-    uint32_t stored = 0;
+    uint8_t i = 0;
+    uint16_t water_value, on_value;
+    uint16_t samples[8];
     /* Set clock prescaler to 64 (125kHz clock speed) */
     CLKPR = (1 << CLKPCE) | (0 << CLKPS3) | (0 << CLKPS2) | (0 << CLKPS1) | (0 << CLKPS0);
     CLKPR = (0 << CLKPCE) | (0 << CLKPS3) | (1 << CLKPS2) | (1 << CLKPS1) | (0 << CLKPS0);    
@@ -159,68 +171,64 @@ int main (void)
     ADCInit();
     IntInit();
 
-    air_value = 200;
-    water_value = 600;
+    /* Indicate that calibration is required */
+    timer_flag = 1;
+
     while(1) {
-        /* Keep alive LED on B0 */
-        //BlinkLED();
+        /* React to switch turn on */
+        if(timer_flag) {
+            /* Turn on indicator LED for initialisation */
+            sbi(PORTB, PORTB0);
+            sbi(PORTB, PORTB4);
+            _delay_ms(100);
+            /* Initilise water value */
+            water_value = ADCGet();
+            _delay_ms(100);;
+            cbi(PORTB, PORTB4);
+#ifdef AVG_FILT
+            /* Fill first few samples */
+            for(i = 0; i<FILT_LENGTH; i++) {
+                on_value = AvgFilt(samples, ADCGet());
+            }
+#endif
+            cbi(PORTB, PORTB0);
+            PlayAlarm();
+            i = 0;
+            timer_flag = 0;
+        }
 
         /* TODO: turn on and off ADC, and have appropriate delay between */
         /* ADC retreival */
+        _delay_ms(100);
         sbi(PORTB, PORTB4);
-        _delay_ms(50);
+#ifdef AVG_FILT
+        on_value = AvgFilt(samples, ADCGet());
+#endif
+        _delay_ms(50); // Duty cycle = 25 / 25+25 = 50% w freq of 10Hz
         on_value = ADCGet();
-        
-        //cbi(PORTB, PORTB4);
-        _delay_ms(50);
-        //off_value = ADCGet();
+        _delay_ms(50); // Duty cycle = 25 / 25+25 = 50% w freq of 10Hz
+
+        i++;
+        cbi(PORTB, PORTB4);
+
 
         /* Check if a bubble was detected */
-        if(on_value > (12*water_value/10)){
+        if(on_value < (BUBBLE_THRESH*water_value/10)){
             /* Bubble detected */
             BlinkLED();
             //PlayAlarm();
+        } else if (i == 200) {
+            /* Recalculate water_value every 10 seconds */
+            sbi(PORTB, PORTB4);
+            _delay_ms(100);
+            /* Initilise water value */
+            water_value = ADCGet();
+            _delay_ms(100);;
+            cbi(PORTB, PORTB4);
+            i = 0;
         }
         
-        //~ if(air_value < water_value) {
-            //~ if((on_value < (1.1*water_value)) && (on_value > (0.8*air_value))) {
-                //~ /* Increment stored value */
-                //~ sbi(PORTB, PORTB0);
-                //~ if (++stored > MAX_AIR) {
-                    //~ /* Maximum amount of air has entered line */
-                    //~ PlayAlarm();
-                    //~ stored = 0; /* Reset stored air amount DEBUG */
-                //~ }
-            //~ } /*else {
-                //~ cbi(PORTB, PORTB0);
-            //~ }*/
-        //~ } else {
-            //~ if((on_value < (1.1*air_value)) && (on_value > (0.8*water_value))) {
-                //~ /* Increment stored value */
-                //~ sbi(PORTB, PORTB0);
-                //~ if (++stored > MAX_AIR) {
-                    //~ /* Maximum amount of air has entered line */
-                    //~ PlayAlarm();
-                    //~ stored = 0; /* Reset stored air amount DEBUG */
-                //~ }
-            //~ }
-        //~ }
 
-        /* React to switch turn on */
-        if(timer_flag) {
-            water_value = ADCGet();
-            PlayAlarm();
-            //~ /* Read Pins and check PB3 */
-            //~ if(PINB & (1 << PB3)) {
-                //~ /* Pin was a rising edge */
-                //~ water_value = ADCGet();
-            //~ } else {
-                //~ /* Pin was a falling edge */
-                //~ air_value = ADCGet();
-            //~ }
-            //~ timer_flag = 0;
-            timer_flag = 0;
-        }
     }
     return 0;
 }
