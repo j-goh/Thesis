@@ -19,8 +19,18 @@
 #define sbi(sfr,bit) (sfr |= _BV(bit))
 #define cbi(sfr,bit) (sfr &= ~(_BV(bit)))
 
+
+#define SAMPLE_RATE     20
+#define SAMPLE_PERIOD   (1000/SAMPLE_RATE)
 #define BUBBLE_THRESH   8
-#define MAX_AIR         5
+/* Maximum amount of air to enter a line
+ * Depending on the sample rate, each positive sample indicates a volume of air
+ * air volume = flow_rate * tube_diamter * sample_period / 2
+ * e.g. sampling at 20Hz w 50% duty cycle = 50ms on time
+ * 50ms @ flow rate of 10mm/s w. tube size of 2.5mm radius (20mm^2) = 10mm^3 = 0.01cm
+ * Spec = 300mL, so we would need 3000 bubbles
+ */
+#define MAX_AIR         100
 #define FILT_LENGTH     8
 
 
@@ -161,7 +171,7 @@ int main (void)
 {
     uint8_t i = 0;
     uint16_t water_value, on_value;
-    uint16_t samples[8];
+    uint16_t bubble_count = 0;
     /* Set clock prescaler to 64 (125kHz clock speed) */
     CLKPR = (1 << CLKPCE) | (0 << CLKPS3) | (0 << CLKPS2) | (0 << CLKPS1) | (0 << CLKPS0);
     CLKPR = (0 << CLKPCE) | (0 << CLKPS3) | (1 << CLKPS2) | (1 << CLKPS1) | (0 << CLKPS0);    
@@ -199,35 +209,41 @@ int main (void)
 
         /* TODO: turn on and off ADC, and have appropriate delay between */
         /* ADC retreival */
-        _delay_ms(100);
-        sbi(PORTB, PORTB4);
+        _delay_ms(SAMPLE_PERIOD / 2); /* Off time */
+        sbi(PORTB, PORTB4); /* Turn on sensor LED */
 #ifdef AVG_FILT
         on_value = AvgFilt(samples, ADCGet());
 #endif
-        _delay_ms(50); // Duty cycle = 25 / 25+25 = 50% w freq of 10Hz
+        _delay_ms(SAMPLE_PERIOD / 4); /* On time / 2 */
         on_value = ADCGet();
-        _delay_ms(50); // Duty cycle = 25 / 25+25 = 50% w freq of 10Hz
+        _delay_ms(SAMPLE_PERIOD / 4); /* On time / 2 */
 
         i++;
-        cbi(PORTB, PORTB4);
-
+        cbi(PORTB, PORTB4); /* Turn off sensor LED */
 
         /* Check if a bubble was detected */
         if(on_value < (BUBBLE_THRESH*water_value/10)){
             /* Bubble detected */
-            BlinkLED();
-            //PlayAlarm();
+            if(++bubble_count > MAX_AIR) {
+                /* Sound alarm indefinitely */
+                sbi(PORTB, PORTB0);
+                while(1) {
+                    PlayAlarm();
+                }
+            }
+            sbi(PORTB, PORTB0);
         } else if (i == 200) {
             /* Recalculate water_value every 10 seconds */
             sbi(PORTB, PORTB4);
-            _delay_ms(100);
+            _delay_ms(50);
             /* Initilise water value */
             water_value = ADCGet();
-            _delay_ms(100);;
+            _delay_ms(50);;
             cbi(PORTB, PORTB4);
             i = 0;
+        } else {
+            cbi(PORTB, PORTB0);
         }
-        
 
     }
     return 0;
